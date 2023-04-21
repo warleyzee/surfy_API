@@ -1,33 +1,48 @@
 {
-  "name": "surfy",
+  "name": "typescript-api",
   "version": "1.0.0",
-  "description": "typescript Node.js API",
+  "description": "Complete API built with Node.js and Typescript",
   "main": "index.js",
   "scripts": {
     "build": "tsc",
     "start": "yarn build && node dist/src/index.js",
     "start:local": "ts-node-dev --transpile-only src/index.ts",
+    "test": "echo \"Error: no test specified\" && exit 1",
     "lint": "eslint ./src ./test --ext .ts",
     "lint:fix": "eslint ./src ./test --ext .ts --fix",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test:functional": "jest --projects ./test --forceExit --runInBand"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/waldemarnt/node-typescript-api.git"
   },
   "keywords": [
+    "node",
     "nodejs",
-    "typescripit",
+    "typescript",
     "api"
   ],
-  "author": "Warley Henrique",
-  "license": "ISC",
-  "devDependencies": {
-    "@types/module-alias": "^2.0.1",
-    "@types/node": "^18.15.12",
-    "@typescript-eslint/eslint-plugin": "^5.59.0",
-    "@typescript-eslint/parser": "^5.59.0",
-    "eslint": "^8.38.0",
-    "ts-node-dev": "^2.0.0",
-    "typescript": "^5.0.4"
+  "author": "Waldemar Neto",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/waldemarnt/node-typescript-api/issues"
   },
+  "homepage": "https://github.com/waldemarnt/node-typescript-api#readme",
   "dependencies": {
     "module-alias": "^2.2.2"
+  },
+  "devDependencies": {
+    "@types/jest": "^27.0.3",
+    "@types/module-alias": "^2.0.1",
+    "@types/node": "16",
+    "@types/supertest": "^2.0.12",
+    "@typescript-eslint/eslint-plugin": "^5.8.1",
+    "@typescript-eslint/parser": "^5.8.1",
+    "eslint": "^8.5.0",
+    "jest": "^27.4.5",
+    "supertest": "^6.3.3",
+    "ts-jest": "^27.1.2",
+    "ts-node-dev": "^1.1.8",
+    "typescript": "^4.5.4"
   }
 }
