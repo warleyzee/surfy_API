@@ -1,183 +1,140 @@
-import { AxiosStatic } from 'axios';
+import axios, { AxiosError, AxiosStatic } from 'axios';
+import { InternalError } from '@src/util/errors/internal-error';
+import config, { IConfig } from 'config';
 
-export interface StormGlassSource {
-    [key: string]: number;
+export interface StormGlassPointSource {
+  [key: string]: number;
 }
 
-export interface StormGlassPoint{
-    readonly time: string;
-    readonly waveHeight: StormGlassSource;
-    readonly waveDirection: StormGlassSource;
-    readonly swellDirection: StormGlassSource;
-    readonly swellPeriod: StormGlassSource;
-    readonly swellHeight: StormGlassSource;
-    readonly windDirection: StormGlassSource;
-    readonly windSpeed: StormGlassSource;
+export interface StormGlassPoint {
+  time: string;
+  readonly waveHeight: StormGlassPointSource;
+  readonly waveDirection: StormGlassPointSource;
+  readonly swellDirection: StormGlassPointSource;
+  readonly swellHeight: StormGlassPointSource;
+  readonly swellPeriod: StormGlassPointSource;
+  readonly windDirection: StormGlassPointSource;
+  readonly windSpeed: StormGlassPointSource;
 }
 
-export interface StormGlassForecastResponse{
-    hours: StormGlassPoint[];
+export interface StormGlassForecastResponse {
+  hours: StormGlassPoint[];
 }
 
-export interface ForecastPoint{
-    time: string;
-    waveHeight: number;
-    waveDirection: number;
-    swellDirection: number;
-    swellPeriod: number;
-    swellHeight: number;
-    windDirection: number;
-    windSpeed: number;
-    
+export interface ForecastPoint {
+  time: string;
+  waveHeight: number;
+  waveDirection: number;
+  swellDirection: number;
+  swellHeight: number;
+  swellPeriod: number;
+  windDirection: number;
+  windSpeed: number;
 }
-export class StormGlass{
-    readonly stormGlassAPIParams =
+
+/**
+ * This error type is used when a request reaches out to the StormGlass API but returns an error
+ */
+export class StormGlassUnexpectedResponseError extends InternalError {
+  constructor(message: string) {
+    super(message);
+  }
+}
+
+/**
+ * This error type is used when something breaks before the request reaches out to the StormGlass API
+ * eg: Network error, or request validation error
+ */
+export class ClientRequestError extends InternalError {
+  constructor(message: string) {
+    const internalMessage =
+      'Unexpected error when trying to communicate to StormGlass';
+    super(`${internalMessage}: ${message}`);
+  }
+}
+
+export class StormGlassResponseError extends InternalError {
+  constructor(message: string) {
+    const internalMessage =
+      'Unexpected error returned by the StormGlass service';
+    super(`${internalMessage}: ${message}`);
+  }
+}
+
+/**
+ * We could have proper type for the configuration
+ */
+const stormglassResourceConfig: IConfig = config.get(
+  'App.resources.StormGlass'
+);
+
+export class StormGlass {
+  readonly stormGlassAPIParams =
     'swellDirection,swellHeight,swellPeriod,waveDirection,waveHeight,windDirection,windSpeed';
-    readonly stormGlassAPISource = 'noaa'
+  readonly stormGlassAPISource = 'noaa';
 
-    constructor(protected request: AxiosStatic) {}
-    
-    public async fetchPoints(lat:number, lng:number): Promise<ForecastPoint[]>{
-        const response = await this.request.get<StormGlassForecastResponse>(
-            `https://api.stormglass.io/v2/weather/point?params=${this.stormGlassAPIParams}&source=${this.stormGlassAPISource}&end=1592113802&lat=${lat}&lng=${lng}`,
-            {
-              headers:{
-                Authorizations: 'fake-token'
-              },
-            }
+  constructor(protected request: AxiosStatic = axios) {}
+
+  public async fetchPoints(lat: number, lng: number): Promise<ForecastPoint[]> {
+    try {
+      const response = await this.request.get<StormGlassForecastResponse>(
+        `${stormglassResourceConfig.get(
+          'apiUrl'
+        )}/weather/point?lat=${lat}&lng=${lng}&params=${
+          this.stormGlassAPIParams
+        }&source=${this.stormGlassAPISource}`,
+        {
+          headers: {
+            Authorization: stormglassResourceConfig.get('apiToken'),
+          },
+        }
+      );
+      return this.normalizeResponse(response.data);
+    } catch (err) {
+      /**
+       * This is handling the Axios errors specifically
+       */
+      const axiosError = err as AxiosError;
+      if (
+        axiosError instanceof Error &&
+        axiosError.response &&
+        axiosError.response.status
+      ) {
+        throw new StormGlassResponseError(
+          `Error: ${JSON.stringify(axiosError.response.data)} Code: ${
+            axiosError.response.status
+          }`
         );
-            return this.normalizeResponse(response.data)
+      }
+      // The type is temporary given we will rework it in the upcoming chapters
+      throw new ClientRequestError((err as { message: any }).message);
     }
+  }
+  private normalizeResponse(
+    points: StormGlassForecastResponse
+  ): ForecastPoint[] {
+    return points.hours.filter(this.isValidPoint.bind(this)).map((point) => ({
+      swellDirection: point.swellDirection[this.stormGlassAPISource],
+      swellHeight: point.swellHeight[this.stormGlassAPISource],
+      swellPeriod: point.swellPeriod[this.stormGlassAPISource],
+      time: point.time,
+      waveDirection: point.waveDirection[this.stormGlassAPISource],
+      waveHeight: point.waveHeight[this.stormGlassAPISource],
+      windDirection: point.windDirection[this.stormGlassAPISource],
+      windSpeed: point.windSpeed[this.stormGlassAPISource],
+    }));
+  }
 
-    private normalizeResponse(
-        points: StormGlassForecastResponse
-      ): ForecastPoint[] {
-        return points.hours.filter(this.isValidPoint.bind(this)).map((point) => ({
-          swellDirection: point.swellDirection[this.stormGlassAPISource],
-          swellHeight: point.swellHeight[this.stormGlassAPISource],
-          swellPeriod: point.swellPeriod[this.stormGlassAPISource],
-          time: point.time,
-          waveDirection: point.waveDirection[this.stormGlassAPISource],
-          waveHeight: point.waveHeight[this.stormGlassAPISource],
-          windDirection: point.windDirection[this.stormGlassAPISource],
-          windSpeed: point.windSpeed[this.stormGlassAPISource],
-        }));
-      }
-
-    private isValidPoint(point: Partial<StormGlassPoint>): boolean {
-        return !!(
-          point.time &&
-          point.swellDirection?.[this.stormGlassAPISource] &&
-          point.swellHeight?.[this.stormGlassAPISource] &&
-          point.swellPeriod?.[this.stormGlassAPISource] &&
-          point.waveDirection?.[this.stormGlassAPISource] &&
-          point.waveHeight?.[this.stormGlassAPISource] &&
-          point.windDirection?.[this.stormGlassAPISource] &&
-          point.windSpeed?.[this.stormGlassAPISource]
-        );
-      }
+  private isValidPoint(point: Partial<StormGlassPoint>): boolean {
+    return !!(
+      point.time &&
+      point.swellDirection?.[this.stormGlassAPISource] &&
+      point.swellHeight?.[this.stormGlassAPISource] &&
+      point.swellPeriod?.[this.stormGlassAPISource] &&
+      point.waveDirection?.[this.stormGlassAPISource] &&
+      point.waveHeight?.[this.stormGlassAPISource] &&
+      point.windDirection?.[this.stormGlassAPISource] &&
+      point.windSpeed?.[this.stormGlassAPISource]
+    );
+  }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// import axios, { AxiosStatic } from 'axios';
-
-// export interface StormGlassPointSource {
-//   [key: string]: number;
-// }
-
-// export interface StormGlassPoint {
-//   time: string;
-//   readonly waveHeight: StormGlassPointSource;
-//   readonly waveDirection: StormGlassPointSource;
-//   readonly swellDirection: StormGlassPointSource;
-//   readonly swellHeight: StormGlassPointSource;
-//   readonly swellPeriod: StormGlassPointSource;
-//   readonly windDirection: StormGlassPointSource;
-//   readonly windSpeed: StormGlassPointSource;
-// }
-
-// export interface StormGlassForecastResponse {
-//   hours: StormGlassPoint[];
-// }
-
-// export interface ForecastPoint {
-//   time: string;
-//   waveHeight: number;
-//   waveDirection: number;
-//   swellDirection: number;
-//   swellHeight: number;
-//   swellPeriod: number;
-//   windDirection: number;
-//   windSpeed: number;
-// }
-
-// export class StormGlass {
-//   readonly stormGlassAPIParams =
-//     'swellDirection,swellHeight,swellPeriod,waveDirection,waveHeight,windDirection,windSpeed';
-//   readonly stormGlassAPISource = 'noaa';
-
-//   constructor(protected request: AxiosStatic = axios) {}
-
-//   public async fetchPoints(lat: number, lng: number): Promise<ForecastPoint[]> {
-//     const response = await this.request.get<StormGlassForecastResponse>(
-//       `https://api.stormglass.io/v2/weather/point?lat=${lat}&lng=${lng}&params=${this.stormGlassAPIParams}&source=${this.stormGlassAPISource}`,
-//       {
-//         headers: {
-//           Authorization: 'df8fffe2-e353-11ed-8d52-0242ac130002-df900046-e353-11ed-8d52-0242ac130002',
-//         },
-//       }
-//     );
-//     return this.normalizeResponse(response.data);
-//   }
-//   private normalizeResponse(
-//     points: StormGlassForecastResponse
-//   ): ForecastPoint[] {
-//     return points.hours.filter(this.isValidPoint.bind(this)).map((point) => ({
-//       swellDirection: point.swellDirection[this.stormGlassAPISource],
-//       swellHeight: point.swellHeight[this.stormGlassAPISource],
-//       swellPeriod: point.swellPeriod[this.stormGlassAPISource],
-//       time: point.time,
-//       waveDirection: point.waveDirection[this.stormGlassAPISource],
-//       waveHeight: point.waveHeight[this.stormGlassAPISource],
-//       windDirection: point.windDirection[this.stormGlassAPISource],
-//       windSpeed: point.windSpeed[this.stormGlassAPISource],
-//     }));
-//   }
-
-//   private isValidPoint(point: Partial<StormGlassPoint>): boolean {
-//     return !!(
-//       point.time &&
-//       point.swellDirection?.[this.stormGlassAPISource] &&
-//       point.swellHeight?.[this.stormGlassAPISource] &&
-//       point.swellPeriod?.[this.stormGlassAPISource] &&
-//       point.waveDirection?.[this.stormGlassAPISource] &&
-//       point.waveHeight?.[this.stormGlassAPISource] &&
-//       point.windDirection?.[this.stormGlassAPISource] &&
-//       point.windSpeed?.[this.stormGlassAPISource]
-//     );
-//   }
-// }
